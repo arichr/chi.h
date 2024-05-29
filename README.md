@@ -20,6 +20,7 @@ To use `cli.h`, define `CLI_IMPLEMENTATION` and include the header in your appli
 | `CLI_DEFAULT_ARR_CAP` | `5` | Default capacity for dynamic arrays (e.g. `CliStringArray`). |
 | `CLI_ASSERT` | `assert` | An assert function. If not defined, `assert()` form `<assert.h>` is used. |
 | `CLI_MALLOC` | `malloc` | A function for allocating memory. If not defined, `malloc()` from `<stdlib.h>` is used. |
+| `CLI_FREE` | `free` | A function for freeing memory. If not defined, `free()` from `<stdlib.h>` is used. |
 | `CLI_ERROR_SYM` | `"✖"` | A symbol to use in error messages. By default, it is a Unicode  'x' that may be unsupported by a terminal font. |
 | `CLI_INFO_SYM` | `"●"` | A symbol to use in information messages. By default, it is a Unicode circle that may be unsupported by a terminal font. |
 
@@ -70,6 +71,7 @@ int main(int argc, char** argv) {
 	for (unsigned short i = 0; i < cli.program_options.length; i++) {
 		cli_printf_debug("Program: %s", cli.program_options.data[i]);
 	}
+	cli_free(&cli);
 }
 ```
 
@@ -98,7 +100,7 @@ enum CliError {
 };
 
 enum CliError cli_parse(int argc, char** argv, Cli* cli);
-inline void free_cli(Cli* cli);
+inline void cli_free(Cli* cli);
 
 // Formatting output
 // To initialize/reset variables below, cli_toggle_colors() should be called.

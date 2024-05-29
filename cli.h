@@ -47,6 +47,9 @@
 //     CLI_MALLOC = malloc
 //         A function for allocating memory. If not defined, malloc() from
 //         <stdlib.h> is used.
+//     CLI_FREE = free
+//         A function for freeing memory. If not defined, free() from
+//         <stdlib.h> is used.
 //     CLI_ERROR_SYM = "✖"
 //         A symbol to use in error messages. By default, it is a Unicode
 //         'x' that may be unsupported by a terminal font.
@@ -77,6 +80,10 @@
 
 #ifndef __CLI_H_
 #define __CLI_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 const char* CLI_RESET = "";
 const char* CLI_BOLD = "";
@@ -115,7 +122,7 @@ void cli_toggle_colors(void);
 enum CliError cli_parse(int argc, char** argv, Cli* cli);
 
 // Free memory occupied by dynamic arrays.
-inline void free_cli(Cli* cli);
+inline void cli_free(Cli* cli);
 
 /********************************** =(^-x-^)= **********************************/
 
@@ -126,44 +133,44 @@ inline void free_cli(Cli* cli);
 #define true  1
 #define false 0
 #else
-#include <stdbool.h> // bool, false, true
+#include <stdbool.h>
 #endif // CLI_NO_STDBOOL_H
 
 #ifndef CLI_NO_STDIO_H
-#include <stdio.h> // fprintf
-#endif // CLI_NO_STDIO_H
+#include <stdio.h>
+#endif
 
 #if !defined CLI_MALLOC || !defined CLI_FREE
-#include <stdlib.h> // malloc, free
+#include <stdlib.h>
 #endif
 
 #ifndef CLI_MALLOC
 #define CLI_MALLOC malloc
-#endif // CLI_MALLOC
+#endif
 
 #ifndef CLI_FREE
 #define CLI_FREE free
-#endif // CLI_FREE
+#endif
 
 #ifndef CLI_ASSERT
-#include <assert.h> // assert
+#include <assert.h>
 #define CLI_ASSERT assert
-#endif // CLI_ASSERT
+#endif
 
 #ifndef CLI_DEFAULT_ARR_CAP
 #define CLI_DEFAULT_ARR_CAP 5
-#endif // CLI_DEFAULT_ARR_CAP
+#endif
 
 #define CLI_STR_(x) #x
 #define CLI_STR(x)	CLI_STR_(x)
 
 #ifndef CLI_ERROR_SYM
 #define CLI_ERROR_SYM "✖"
-#endif // CLI_ERROR_SYM
+#endif
 
 #ifndef CLI_INFO_SYM
 #define CLI_INFO_SYM "●"
-#endif // CLI_INFO_SYM
+#endif
 
 #define cli_da_init(array, item_t, da_malloc)                             \
 	{                                                                     \
@@ -283,11 +290,16 @@ enum CliError cli_parse(int argc, char** argv, Cli* cli) {
 	return CliErrorOk;
 }
 
-inline void free_cli(Cli* cli) {
+inline void cli_free(Cli* cli) {
 	CLI_FREE(cli->args.data);
 	CLI_FREE(cli->cmd_options.data);
 	CLI_FREE(cli->program_options.data);
 }
 
 #endif // CLI_IMPLEMENTATION
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif // __CLI_H_
