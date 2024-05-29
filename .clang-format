@@ -1,0 +1,42 @@
+---
+BasedOnStyle: WebKit
+AlignAfterOpenBracket: BlockIndent
+AlignConsecutiveBitFields:
+  Enabled:          true
+AlignConsecutiveMacros:
+  Enabled:          true
+AlignEscapedNewlines: Left
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLambdasOnASingleLine: All
+AllowShortLoopsOnASingleLine: true
+BraceWrapping:
+  AfterFunction:         false
+  BeforeCatch:           true
+BreakAfterJavaFieldAnnotations: true
+BreakBeforeBraces: Custom
+BreakConstructorInitializers: AfterColon
+BreakInheritanceList: AfterColon
+ColumnLimit: 100
+FixNamespaceComments: true
+IncludeCategories:
+  - Regex: "^<"
+    Priority: 1
+  - Regex: "^\""
+    Priority: 2
+InsertNewlineAtEOF: true
+JavaScriptQuotes: Double
+LineEnding: LF
+PenaltyReturnTypeOnItsOwnLine: 0
+RemoveSemicolon: true
+SeparateDefinitionBlocks: Always
+ShortNamespaceLines: 50
+SpaceInEmptyBlock: false
+SpacesInCStyleCastParentheses: false
+AlwaysBreakAfterReturnType: None
+SpacesInContainerLiterals: false
+Standard: c++20
+TabWidth: 4
+UseTab: Always
+...

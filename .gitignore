@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Modules' leftovers
+.pytest_cache/
+.ruff_cache/
+node_modules/
+.venv/
+dist/
+venv/
+
+# Code coverage
+.coverage
+coverage.xml
+
+# Build artifacts
+site/
+build/
+
+# Text editors, IDEs
+.vscode/
+
+# etc.
+*private*
