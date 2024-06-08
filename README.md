@@ -2,11 +2,9 @@
     <h1 align="center">cli.h</h1>
     <p align="center">
         Stb-style library for handling the command line.
+        <a href="#examples"><img src="readme_files/printing.png" alt="Printing functions"></a>
     </p>
 </p>
-
-| ![Printing functions](readme_files/printing.png) | ![Errors](readme_files/errors.png) |
-|---|---|
 
 ## Getting started
 
@@ -17,7 +15,7 @@ To use `cli.h`, define `CLI_IMPLEMENTATION` and include the header in your appli
 | `CLI_NO_STDIO_H` | - | Do not include `<stdio.h>` (but `fprintf()` is still expected to be defined). |
 | `CLI_NO_STDBOOL_H` | - | Do not use `<stdbool.h>`. |
 | `CLI_NO_STYLES` | - | Do not use colors and other styles for formatting output. |
-| `CLI_DEFAULT_ARR_CAP` | `5` | Default capacity for dynamic arrays (e.g. `CliStringArray`). |
+| `CLI_DEFAULT_ARR_CAP` | `5` | Default capacity for dynamic arrays (e.g. `CliArray`). |
 | `CLI_ASSERT` | `assert` | An assert function. If not defined, `assert()` from `<assert.h>` is used. |
 | `CLI_MALLOC` | `malloc` | A function for allocating memory. If not defined, `malloc()` from `<stdlib.h>` is used. |
 | `CLI_REALLOC` | `realloc` | A function for reallocating memory. If not defined, `realloc()` from `<stdlib.h>` is used. |
@@ -27,11 +25,11 @@ To use `cli.h`, define `CLI_IMPLEMENTATION` and include the header in your appli
 
 **Please note** that options provided **after** the positional arguments are considered **cmd_options**, not program_options.
 
-For example, for `./program --option=1 -flag2 argument --unexpected`:
+For example, for `./program --option=1 -flag2 argument --modifier`:
  * `./program` is stored in `Cli.execfile`;
  * `--option=1 -flag` are stored in `Cli.program_options`;
  * `argument` is stored in `Cli.args`;
- * And finally, `--unexpected` is stored in `Cli.cmd_options`.
+ * And finally, `--modifier` is stored in `Cli.cmd_options`.
 
 ### Double dash (`--`)
 
@@ -40,7 +38,22 @@ However, double dash should be used prior to the positional arguments.
 
 ![Double dash](readme_files/double_dash.png)
 
-## Example
+## Using stack
+
+> **[Example](#example-noheap)**
+
+It is possible to use `cli.h` without allocating `CliArray.data` on the heap. For that, `CLI_NOHEAP` and/or `CLI_NOHEAP_IMPLEMENTATION` should be used.
+
+Similarly to `CLI_IMPLEMENTATION`, `CLI_NOHEAP_IMPLEMENTATION` provides the implementation for `CLI_NOHEAP`.
+If `CLI_NOHEAP_IMPLEMENTATION` is defined, `#define CLI_NOHEAP` is optional and does not affect the behaviour.
+
+**When using stack, make sure that:**
+
+ * `cli_parse_noheap(int argc, char** argv, struct Cli* cli, CliStackNode* stack)` is called instead of `cli_parse(...)`
+ * The `capacity` field of `CliArray` is not used
+ * The `next_unused` field of `CliStackNode` is not used
+
+## Examples
 
 ```c
 #define CLI_IMPLEMENTATION
@@ -64,11 +77,9 @@ int main(int argc, char** argv) {
     for (unsigned short i = 0; i < cli.args.length; i++) {
         cli_printf_debug("Argument: %s", cli.args.data[i]);
     }
-
     for (unsigned short i = 0; i < cli.cmd_options.length; i++) {
         cli_printf_debug("CMD: %s", cli.cmd_options.data[i]);
     }
-
     for (unsigned short i = 0; i < cli.program_options.length; i++) {
         cli_printf_debug("Program: %s", cli.program_options.data[i]);
     }
@@ -76,53 +87,34 @@ int main(int argc, char** argv) {
 }
 ```
 
-## cli.h API
+<a name="example-noheap"></a>
 
 ```c
-// Parsing
-struct CliStringArray {
-    unsigned short length;
-    unsigned short capacity;
-    const char** data;
-};
+#define CLI_NOHEAP_IMPLEMENTATION
+#define CLI_IMPLEMENTATION
+#include "cli.h"
 
-typedef struct Cli {
-    const char* execfile;
-    const char* command;
-    struct CliStringArray args;
-    struct CliStringArray cmd_options;
-    struct CliStringArray program_options;
-} Cli;
+int main(int argc, char** argv) {
+    CliStackNode stack[argc];
+    Cli cli;
 
-enum CliError {
-    CliErrorOk,
-    CliErrorUser,
-    CliErrorFatal
-};
+    cli_toggle_styles(); // Use ANSI escape sequences
+    int exit_code = cli_parse_noheap(argc, argv, &cli, stack);
+    if (exit_code) {
+        return exit_code;
+    }
 
-enum CliError cli_parse(int argc, char** argv, Cli* cli);
-inline void cli_free(Cli* cli);
-
-// Formatting output
-// To initialize/reset variables below, cli_toggle_styles() should be called.
-const char* CLI_RESET = "";
-const char* CLI_BOLD = "";
-const char* CLI_DIM = "";
-const char* CLI_FORE_RED = "";
-const char* CLI_FORE_BRBLUE = "";
-
-void cli_toggle_styles(void);
-
-// Printing
-cli_print_error(title, msg);
-cli_printf_error(title, msg, ...);
-
-cli_print_info(title, msg);
-cli_printf_info(title, msg, ...);
-
-cli_printf_debug(title, msg, ...);
-
-// Etc.
-cli_da_init(array, item_t, da_malloc);
-cli_da_append(array, item);
+    for (unsigned short i = 0; i < cli.args.length; i++) {
+        // cli.args.data[i] can also be casted to char* safely.
+        cli_printf_debug("Argument: %s", cli.args.data[i].value);
+    }
+    for (unsigned short i = 0; i < cli.cmd_options.length; i++) {
+        // cli.cmd_options.data[i] can also be casted to char* safely.
+        cli_printf_debug("CMD: %s", cli.cmd_options.data[i].value);
+    }
+    for (unsigned short i = 0; i < cli.program_options.length; i++) {
+        // cli.program_options.data[i] can also be casted to char* safely.
+        cli_printf_debug("Program: %s", cli.program_options.data[i].value);
+    }
+}
 ```

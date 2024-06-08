@@ -10,8 +10,8 @@
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -29,8 +29,8 @@
 //     #define CLI_IMPLEMENTATION
 //     #include "cli.h"
 //
-// The behaviour and dependencies of this library can be configured with defining
-// these macros:
+// The behaviour and dependencies of this library can be configured with
+// defining these macros:
 //     CLI_NO_STDIO_H
 //         Do not include <stdio.h> (but fprintf() is still expected to be
 //         defined).
@@ -38,9 +38,13 @@
 //         Do not use <stdbool.h>.
 //     CLI_NO_STYLES
 //         Do not use colors and other styles for formatting output.
+//     CLI_NOHEAP
+//     CLI_NOHEAP_IMPLEMENTATION
+//         Do not allocate arguments on the heap. For more information, see
+//         below.
 //
 //     CLI_DEFAULT_ARR_CAP = 5
-//         Default capacity for dynamic arrays (e.g. CliStringArray).
+//         Default capacity for dynamic arrays (e.g. CliArray).
 //     CLI_ASSERT = assert
 //         An assert function. If not defined, assert() from <assert.h> is
 //         used.
@@ -66,23 +70,41 @@
 //
 // Example pseudo-code:
 //
-// int main(int argc, char** argv) {
-//     Cli cli;
+//     int main(int argc, char** argv) {
+//         Cli cli;
 //
-//     int exit_code = cli_parse(argc, argv, &cli);
-//     if (exit_code) {
-//         return exit_code;
+//         int exit_code = cli_parse(argc, argv, &cli);
+//         if (exit_code) {
+//             return exit_code;
+//         }
+//         process_options(&cli); // <-- Your function to validate user input
+//         cli_free(&cli);
+//
+//         // ...
+//         if (--color == "yes") {
+//             cli_toggle_styles();
+//         }
+//         // ...
 //     }
-//     process_options(&cli); // <-- Your function to validate user input
-//     cli_free(&cli);
 //
-//     // ...
-//     if (--color == "yes") {
-//         cli_toggle_styles();
-//     }
-//     // ...
-// }
+
+// It is possible to use cli.h without allocating CliArray.data on the heap.
+// For that, CLI_NOHEAP and/or CLI_NOHEAP_IMPLEMENTATION should be used.
 //
+// Similarly to CLI_IMPLEMENTATION, CLI_NOHEAP_IMPLEMENTATION provides the
+// implementation for CLI_NOHEAP.
+// If CLI_NOHEAP_IMPLEMENTATION is defined, defining CLI_NOHEAP is optional and
+// does not affect the behaviour.
+//
+// Changes that have to be made to your program:
+// 1. Declare an array for arguments: CliStackNode stack[argc - 1]
+// 2. Call cli_parse_noheap(argc, argv, &cli, stack) instead of cli_parse(...)
+// 3. If no heap allocations are made, it is not possible for cli.h to
+//    determine the capacity of the CliStackNode[] array. Thus, .capacity
+//    of CliArray should not be used.
+// 4. If you use cli_parse_noheap() instead of preparing variables manually,
+//    .next_unused of CliStackNode cannot be used either. It points to a local
+//    variable that becomes invalid after cli_parse_noheap() returns.
 
 #ifndef __CLI_H_
 #define __CLI_H_
@@ -97,18 +119,31 @@ const char* CLI_DIM = "";
 const char* CLI_FORE_RED = "";
 const char* CLI_FORE_BRBLUE = "";
 
-struct CliStringArray {
+#if defined(CLI_NOHEAP) || defined(CLI_NOHEAP_IMPLEMENTATION)
+typedef struct CliStackNode {
+    // We expect .value to be the first field to be able to cast to char*.
+    const char* value;
+    struct CliStackNode** next_unused;
+} CliStackNode;
+
+struct CliArray {
+    unsigned short length;
+    CliStackNode* stack;
+    CliStackNode* data;
+};
+#else
+struct CliArray {
     unsigned short length;
     unsigned short capacity;
     const char** data;
 };
+#endif // CLI_NOHEAP || CLI_NOHEAP_IMPLEMENTATION
 
 typedef struct Cli {
     const char* execfile;
-    const char* command;
-    struct CliStringArray args;
-    struct CliStringArray cmd_options;
-    struct CliStringArray program_options;
+    struct CliArray args;
+    struct CliArray cmd_options;
+    struct CliArray program_options;
 } Cli;
 
 enum CliError {
@@ -127,31 +162,58 @@ enum CliError {
  */
 void cli_toggle_styles(void);
 
-// Parse the command line and save results to `cli`.
+/*
+ * Parse the command line and save results to `cli`.
+ *
+ * If `CLI_NOHEAP` or `CLI_NOHEAP_IMPLEMENTATION` is defined and used directly,
+ * uses CLI_ASSERT to fail. In that case, cli_parse_noheap() should be used.
+ */
 enum CliError cli_parse(int argc, char** argv, Cli* cli);
 
-// Free memory occupied by dynamic arrays.
+#if defined(CLI_NOHEAP) || defined(CLI_NOHEAP_IMPLEMENTATION)
+/*
+ * Parse the command line and save pointers to `stack` elements to `cli`.
+ *
+ * Internally, this helper function prepares `cli` fields with pointers to
+ * `stack` and calls cli_parse().
+ */
+enum CliError cli_parse_noheap(int argc, char** argv, struct Cli* cli, CliStackNode* stack);
+#endif
+
+/* Free memory occupied by dynamic arrays.
+ *
+ * If either `CLI_NOHEAP` or `CLI_NOHEAP_IMPLEMENTATION` is defined, does
+ * nothing.
+ */
 void cli_free(Cli* cli);
 
 /********************************** =(^-x-^)= **********************************/
 
 #ifdef CLI_IMPLEMENTATION
 
+#define CLI_STR_(x) #x
+#define CLI_STR(x)  CLI_STR_(x)
+
+// Cannot be equal to 0. Otherwise, memory checks will be failed.
+#define CLI_INVALID_PTR (CliStackNode*)0xCA10CAFE
+
 #ifdef CLI_NO_STDBOOL_H
-#define bool  unsigned short
+#define bool  unsigned char
 #define true  1
 #define false 0
 #else
 #include <stdbool.h>
-#endif
+#endif // CLI_NO_STDBOOL_H
 
 #ifndef CLI_NO_STDIO_H
 #include <stdio.h>
 #endif
 
+#if !defined(CLI_NOHEAP) && !defined(CLI_NOHEAP_IMPLEMENTATION)
 #if !defined CLI_MALLOC || !defined CLI_REALLOC || !defined CLI_FREE
 #include <stdlib.h>
-#endif
+#endif // !CLI_MALLOC || !CLI_REALLOC || !CLI_FREE
+#endif // !CLI_NOHEAP && !CLI_NOHEAP_IMPLEMENTATION
 
 #ifndef CLI_MALLOC
 #define CLI_MALLOC malloc
@@ -174,42 +236,12 @@ void cli_free(Cli* cli);
 #define CLI_DEFAULT_ARR_CAP 5
 #endif
 
-#define CLI_STR_(x) #x
-#define CLI_STR(x)  CLI_STR_(x)
-
 #ifndef CLI_ERROR_SYM
 #define CLI_ERROR_SYM "✖"
 #endif
 
 #ifndef CLI_INFO_SYM
 #define CLI_INFO_SYM "●"
-#endif
-
-#ifndef cli_da_init
-#define cli_da_init(array, item_t, da_malloc)                                      \
-    {                                                                              \
-        (array).capacity = CLI_DEFAULT_ARR_CAP;                                    \
-        (array).length = 0;                                                        \
-        (array).data = (item_t*)(da_malloc)(CLI_DEFAULT_ARR_CAP * sizeof(item_t)); \
-    }
-#endif
-
-#ifndef cli_da_append
-#define cli_da_append(array, item)                                                           \
-    {                                                                                        \
-        if (++(array).length > (array).capacity) {                                           \
-            (array).capacity *= 2;                                                           \
-            (array).data                                                                     \
-                = (typeof(item)*)CLI_REALLOC((array).data, (array).capacity * sizeof(item)); \
-            if ((array).data == NULL) {                                                      \
-                cli_print_error(                                                             \
-                    "Memory error", "Unable to reallocate memory for more array items."      \
-                );                                                                           \
-                CLI_ASSERT(0 && "Memory error");                                             \
-            }                                                                                \
-        }                                                                                    \
-        (array).data[(array).length - 1] = (item);                                           \
-    }
 #endif
 
 #ifndef cli_print_error
@@ -270,6 +302,67 @@ void cli_toggle_styles(void) {
 #endif // CLI_NO_STYLES
 }
 
+#ifdef CLI_NOHEAP_IMPLEMENTATION
+#define cli_da_init(array, _, __)                                                                 \
+    {                                                                                             \
+        CLI_ASSERT(                                                                               \
+            (array).stack                                                                         \
+            && "To avoid heap allocation use cli_parse_noheap() instead of cli_parse() directly." \
+        );                                                                                        \
+        (array).data = CLI_INVALID_PTR;                                                           \
+    }
+#define cli_da_append(array, item)                          \
+    {                                                       \
+        CliStackNode* node = *((array).stack->next_unused); \
+        if ((array).data == CLI_INVALID_PTR) {              \
+            (array).data = node;                            \
+        }                                                   \
+        node->value = (item);                               \
+        *(array).stack->next_unused += 1;                   \
+        (array).length++;                                   \
+    }
+
+enum CliError cli_parse_noheap(int argc, char** argv, struct Cli* cli, CliStackNode* stack) {
+    CliStackNode* unused = stack;
+    // A global (between CliArray instances) variable for holding the pointer
+    // to a next unused `stack` item.
+    stack->next_unused = &unused;
+
+    cli->args = (struct CliArray) { .stack = stack };
+    cli->cmd_options = (struct CliArray) { .stack = stack };
+    cli->program_options = (struct CliArray) { .stack = stack };
+
+    return cli_parse(argc, argv, cli);
+}
+#endif // CLI_NOHEAP_IMPLEMENTATION
+
+#ifndef cli_da_init
+#define cli_da_init(array, item_t, da_malloc)                                      \
+    {                                                                              \
+        (array).capacity = CLI_DEFAULT_ARR_CAP;                                    \
+        (array).length = 0;                                                        \
+        (array).data = (item_t*)(da_malloc)(CLI_DEFAULT_ARR_CAP * sizeof(item_t)); \
+    }
+#endif
+
+#ifndef cli_da_append
+#define cli_da_append(array, item)                                                           \
+    {                                                                                        \
+        if (++(array).length > (array).capacity) {                                           \
+            (array).capacity *= 2;                                                           \
+            (array).data                                                                     \
+                = (typeof(item)*)CLI_REALLOC((array).data, (array).capacity * sizeof(item)); \
+            if ((array).data == NULL) {                                                      \
+                cli_print_error(                                                             \
+                    "Memory error", "Unable to reallocate memory for more array items."      \
+                );                                                                           \
+                CLI_ASSERT(0 && "Memory error");                                             \
+            }                                                                                \
+        }                                                                                    \
+        (array).data[(array).length - 1] = (item);                                           \
+    }
+#endif
+
 static const char* cli_pop_argv(int* argc, char*** argv) {
     CLI_ASSERT(*argc);
     (*argc)--;
@@ -301,7 +394,7 @@ enum CliError cli_parse(int argc, char** argv, Cli* cli) {
         while (argc) {
             arg = cli_pop_argv(&argc, &argv);
             if (arg[0] == '-') {
-                struct CliStringArray* option_array
+                struct CliArray* option_array
                     = is_cmd_option ? &cli->cmd_options : &cli->program_options;
 
                 if (arg[1] == '-' && arg[2] == '\0') {
@@ -310,7 +403,7 @@ enum CliError cli_parse(int argc, char** argv, Cli* cli) {
                             "CLI error",
                             "Double dash ('%s') cannot be specified after the positional argument "
                             "('%s').",
-                            arg, cli->args.data[cli->args.length - 1]
+                            arg, *(char**)(&cli->args.data[cli->args.length - 1])
                         );
                         return CliErrorUser;
                     }
@@ -319,7 +412,16 @@ enum CliError cli_parse(int argc, char** argv, Cli* cli) {
                     cli_da_append(*option_array, arg);
                 }
             } else {
+                if (cli->cmd_options.length > 0) {
+                    cli_printf_error(
+                        "CLI error",
+                        "Positional arguments ('%s') should be specified prior to command options.",
+                        arg
+                    );
+                    return CliErrorUser;
+                }
                 cli_da_append(cli->args, arg);
+                is_cmd_option = true;
             }
         }
     } else {
@@ -330,9 +432,13 @@ enum CliError cli_parse(int argc, char** argv, Cli* cli) {
 }
 
 inline void cli_free(Cli* cli) {
+#if defined(CLI_NOHEAP) || defined(CLI_NOHEAP_IMPLEMENTATION)
+    (void)cli;
+#else
     CLI_FREE(cli->args.data);
     CLI_FREE(cli->cmd_options.data);
     CLI_FREE(cli->program_options.data);
+#endif // CLI_NOHEAP || CLI_NOHEAP_IMPLEMENTATION
 }
 
 #endif // CLI_IMPLEMENTATION
