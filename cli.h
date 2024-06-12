@@ -113,23 +113,27 @@
 extern "C" {
 #endif
 
+#if defined(CLI_NOHEAP_IMPLEMENTATION) && !defined(CLI_NOHEAP)
+#define CLI_NOHEAP
+#endif
+
 const char* CLI_RESET = "";
 const char* CLI_BOLD = "";
 const char* CLI_DIM = "";
 const char* CLI_FORE_RED = "";
 const char* CLI_FORE_BRBLUE = "";
 
-#if defined(CLI_NOHEAP) || defined(CLI_NOHEAP_IMPLEMENTATION)
-typedef struct CliStackNode {
-    // We expect .value to be the first field to be able to cast to char*.
-    const char* value;
-    struct CliStackNode** next_unused;
-} CliStackNode;
-
+#ifdef CLI_NOHEAP
 struct CliArray {
     unsigned short length;
-    CliStackNode* stack;
-    CliStackNode* data;
+    const char** stack;
+    const char** data;
+    // A pointer to a global (between `CliArray` instances) variable that points
+    // to a next unused `stack` item.
+    //
+    // Techinally speaking, it's a pointer to a pointer to an argument
+    // (`const char*`).
+    const char*** next_unused;
 };
 #else
 struct CliArray {
@@ -137,7 +141,7 @@ struct CliArray {
     unsigned short capacity;
     const char** data;
 };
-#endif // CLI_NOHEAP || CLI_NOHEAP_IMPLEMENTATION
+#endif // CLI_NOHEAP
 
 typedef struct Cli {
     const char* execfile;
@@ -170,14 +174,14 @@ void cli_toggle_styles(void);
  */
 enum CliError cli_parse(int argc, char** argv, Cli* cli);
 
-#if defined(CLI_NOHEAP) || defined(CLI_NOHEAP_IMPLEMENTATION)
+#ifdef CLI_NOHEAP
 /*
  * Parse the command line and save pointers to `stack` elements to `cli`.
  *
  * Internally, this helper function prepares `cli` fields with pointers to
  * `stack` and calls cli_parse().
  */
-enum CliError cli_parse_noheap(int argc, char** argv, struct Cli* cli, CliStackNode* stack);
+enum CliError cli_parse_noheap(int argc, char** argv, struct Cli* cli, const char** stack);
 #endif
 
 /* Free memory occupied by dynamic arrays.
@@ -195,12 +199,12 @@ void cli_free(Cli* cli);
 #define CLI_STR(x)  CLI_STR_(x)
 
 // Cannot be equal to 0. Otherwise, memory checks will be failed.
-#define CLI_INVALID_PTR (CliStackNode*)0xCA10CAFE
+#define CLI_INVALID_PTR (const char**)0xCA10CAFE
 
 #ifdef CLI_NO_STDBOOL_H
-#define bool  unsigned char
-#define true  1
-#define false 0
+typedef unsigned char bool
+#define true  (bool)1
+#define false (bool)0
 #else
 #include <stdbool.h>
 #endif // CLI_NO_STDBOOL_H
@@ -209,11 +213,11 @@ void cli_free(Cli* cli);
 #include <stdio.h>
 #endif
 
-#if !defined(CLI_NOHEAP) && !defined(CLI_NOHEAP_IMPLEMENTATION)
+#ifndef CLI_NOHEAP
 #if !defined CLI_MALLOC || !defined CLI_REALLOC || !defined CLI_FREE
 #include <stdlib.h>
 #endif // !CLI_MALLOC || !CLI_REALLOC || !CLI_FREE
-#endif // !CLI_NOHEAP && !CLI_NOHEAP_IMPLEMENTATION
+#endif
 
 #ifndef CLI_MALLOC
 #define CLI_MALLOC malloc
@@ -284,7 +288,8 @@ void cli_free(Cli* cli);
     )
 #endif
 
-void cli_toggle_styles(void) {
+    void
+    cli_toggle_styles(void) {
 #ifndef CLI_NO_STYLES
     if (CLI_RESET[0]) {
         CLI_RESET = "";
@@ -303,34 +308,32 @@ void cli_toggle_styles(void) {
 }
 
 #ifdef CLI_NOHEAP_IMPLEMENTATION
-#define cli_da_init(array, _, __)                                                                 \
-    {                                                                                             \
-        CLI_ASSERT(                                                                               \
-            (array).stack                                                                         \
-            && "To avoid heap allocation use cli_parse_noheap() instead of cli_parse() directly." \
-        );                                                                                        \
-        (array).data = CLI_INVALID_PTR;                                                           \
+#define cli_da_init(array, _, __)                                                          \
+    {                                                                                      \
+        CLI_ASSERT(                                                                        \
+            (array).stack                                                                  \
+            && "(" #array                                                                  \
+               ").stack is not initalized. Use cli_parse_noheap() instead of cli_parse()." \
+        );                                                                                 \
+        (array).data = CLI_INVALID_PTR;                                                    \
     }
-#define cli_da_append(array, item)                          \
-    {                                                       \
-        CliStackNode* node = *((array).stack->next_unused); \
-        if ((array).data == CLI_INVALID_PTR) {              \
-            (array).data = node;                            \
-        }                                                   \
-        node->value = (item);                               \
-        *(array).stack->next_unused += 1;                   \
-        (array).length++;                                   \
+#define cli_da_append(array, item)                  \
+    {                                               \
+        const char** node = *((array).next_unused); \
+        if ((array).data == CLI_INVALID_PTR) {      \
+            (array).data = node;                    \
+        }                                           \
+        *node = (item);                             \
+        *(array).next_unused += 1;                  \
+        (array).length++;                           \
     }
 
-enum CliError cli_parse_noheap(int argc, char** argv, struct Cli* cli, CliStackNode* stack) {
-    CliStackNode* unused = stack;
-    // A global (between CliArray instances) variable for holding the pointer
-    // to a next unused `stack` item.
-    stack->next_unused = &unused;
+enum CliError cli_parse_noheap(int argc, char** argv, struct Cli* cli, const char** stack) {
+    const char** unused = stack;
 
-    cli->args = (struct CliArray) { .stack = stack };
-    cli->cmd_options = (struct CliArray) { .stack = stack };
-    cli->program_options = (struct CliArray) { .stack = stack };
+    cli->args = (struct CliArray) { .stack = stack, .next_unused = &unused };
+    cli->cmd_options = (struct CliArray) { .stack = stack, .next_unused = &unused };
+    cli->program_options = (struct CliArray) { .stack = stack, .next_unused = &unused };
 
     return cli_parse(argc, argv, cli);
 }
@@ -432,7 +435,7 @@ enum CliError cli_parse(int argc, char** argv, Cli* cli) {
 }
 
 inline void cli_free(Cli* cli) {
-#if defined(CLI_NOHEAP) || defined(CLI_NOHEAP_IMPLEMENTATION)
+#ifdef CLI_NOHEAP
     (void)cli;
 #else
     CLI_FREE(cli->args.data);

@@ -15,6 +15,7 @@ To use `cli.h`, define `CLI_IMPLEMENTATION` and include the header in your appli
 | `CLI_NO_STDIO_H` | - | Do not include `<stdio.h>` (but `fprintf()` is still expected to be defined). |
 | `CLI_NO_STDBOOL_H` | - | Do not use `<stdbool.h>`. |
 | `CLI_NO_STYLES` | - | Do not use colors and other styles for formatting output. |
+| `CLI_NOHEAP` <br> `CLI_NOHEAP_IMPLEMENTATION` | - | Do not allocate arguments on the heap. For more information, see [Using stack](#using-stack). |
 | `CLI_DEFAULT_ARR_CAP` | `5` | Default capacity for dynamic arrays (e.g. `CliArray`). |
 | `CLI_ASSERT` | `assert` | An assert function. If not defined, `assert()` from `<assert.h>` is used. |
 | `CLI_MALLOC` | `malloc` | A function for allocating memory. If not defined, `malloc()` from `<stdlib.h>` is used. |
@@ -49,9 +50,8 @@ If `CLI_NOHEAP_IMPLEMENTATION` is defined, `#define CLI_NOHEAP` is optional and 
 
 **When using stack, make sure that:**
 
- * `cli_parse_noheap(int argc, char** argv, struct Cli* cli, CliStackNode* stack)` is called instead of `cli_parse(...)`
- * The `capacity` field of `CliArray` is not used
- * The `next_unused` field of `CliStackNode` is not used
+ * `cli_parse_noheap(int argc, char** argv, struct Cli* cli, const char** stack)` is called instead of `cli_parse(...)`
+ * The `capacity` and `next_unused` fields of `CliArray` are not used
 
 ## Examples
 
@@ -89,32 +89,31 @@ int main(int argc, char** argv) {
 
 <a name="example-noheap"></a>
 
-```c
-#define CLI_NOHEAP_IMPLEMENTATION
-#define CLI_IMPLEMENTATION
-#include "cli.h"
+```diff
++#define CLI_NOHEAP_IMPLEMENTATION
+ #define CLI_IMPLEMENTATION
+ #include "cli.h"
 
-int main(int argc, char** argv) {
-    CliStackNode stack[argc];
-    Cli cli;
+ int main(int argc, char** argv) {
++    const char* stack[argc];
+     Cli cli;
 
-    cli_toggle_styles(); // Use ANSI escape sequences
-    int exit_code = cli_parse_noheap(argc, argv, &cli, stack);
-    if (exit_code) {
-        return exit_code;
-    }
+     cli_toggle_styles(); // Use ANSI escape sequences
+-    int exit_code = cli_parse(argc, argv, &cli);
++    int exit_code = cli_parse_noheap(argc, argv, &cli, stack);
+     if (exit_code) {
+         return exit_code;
+     }
 
-    for (unsigned short i = 0; i < cli.args.length; i++) {
-        // cli.args.data[i] can also be casted to char* safely.
-        cli_printf_debug("Argument: %s", cli.args.data[i].value);
-    }
-    for (unsigned short i = 0; i < cli.cmd_options.length; i++) {
-        // cli.cmd_options.data[i] can also be casted to char* safely.
-        cli_printf_debug("CMD: %s", cli.cmd_options.data[i].value);
-    }
-    for (unsigned short i = 0; i < cli.program_options.length; i++) {
-        // cli.program_options.data[i] can also be casted to char* safely.
-        cli_printf_debug("Program: %s", cli.program_options.data[i].value);
-    }
-}
+     for (unsigned short i = 0; i < cli.args.length; i++) {
+         cli_printf_debug("Argument: %s", cli.args.data[i]);
+     }
+     for (unsigned short i = 0; i < cli.cmd_options.length; i++) {
+         cli_printf_debug("CMD: %s", cli.cmd_options.data[i]);
+     }
+     for (unsigned short i = 0; i < cli.program_options.length; i++) {
+         cli_printf_debug("Program: %s", cli.program_options.data[i]);
+     }
+-    cli_free(&cli);
+ }
 ```
